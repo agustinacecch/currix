@@ -3,23 +3,58 @@ import { career } from "./data/career";
 
 export default function App() {
 
-  const [subjects, setSubjects] = useState(() => {
-    const saved = localStorage.getItem("subjects");
-    if (saved) return JSON.parse(saved);
-    return career.map(s => ({ ...s, status: "no_cursada" }));
-  });
-
+  const [subjects, setSubjects] = useState([]);
   const [openId, setOpenId] = useState(null);
 
+  // ========================
+  // LOAD USER + SUBJECTS
+  // ========================
   useEffect(() => {
-    localStorage.setItem("subjects", JSON.stringify(subjects));
-  }, [subjects]);
+    const fetchUser = async () => {
+      try {
+        const token = localStorage.getItem("token");
+
+        if (!token) {
+          setSubjects(career.flat());
+          return;
+        }
+
+        const res = await fetch("http://localhost:3000/me", {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+
+        const data = await res.json();
+
+        console.log("USER:", data);
+
+        // merge career + progreso
+        const merged = career.flat().map(c => {
+          const saved = data.subjects?.find(s => s.id === c.id);
+
+          return {
+            ...c,
+            status: saved?.status || "no_cursada"
+          };
+        });
+
+        setSubjects(merged);
+
+      } catch (error) {
+        console.log("ERROR:", error);
+        setSubjects(career.flat());
+      }
+    };
+
+    fetchUser();
+  }, []);
 
   // ========================
   // LOGICA
   // ========================
   const isUnlocked = (subject) => {
-    if (!subject.correlatives.length) return true;
+    if (!subject?.correlatives?.length) return true;
 
     return subject.correlatives.every(id => {
       const correlative = subjects.find(s => s.id === id);
@@ -28,12 +63,18 @@ export default function App() {
   };
 
   const getUnlocks = (subject) => {
-    return subjects.filter(s => s.correlatives.includes(subject.id));
+    if (!subject?.id) return [];
+    return subjects.filter(s => s.correlatives?.includes(subject.id));
   };
 
-  const handleChangeStatus = (id) => {
+  // ========================
+  // SAVE STATUS
+  // ========================
+  const handleChangeStatus = async (id) => {
+
     const updated = subjects.map(s => {
       if (s.id === id) {
+
         if (!isUnlocked(s)) return s;
 
         let newStatus = s.status;
@@ -45,10 +86,29 @@ export default function App() {
 
         return { ...s, status: newStatus };
       }
+
       return s;
     });
 
     setSubjects(updated);
+
+    try {
+      const token = localStorage.getItem("token");
+
+      await fetch("http://localhost:3000/auth/subjects", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          subjects: updated
+        })
+      });
+
+    } catch (err) {
+      console.error("❌ Error guardando:", err);
+    }
   };
 
   const toggleOpen = (id) => {
@@ -59,6 +119,8 @@ export default function App() {
   // ESTILOS
   // ========================
   const getStyles = (subject) => {
+    if (!subject) return { bg: "#ddd", btn: "#999", text: "#333" };
+
     const unlocked = isUnlocked(subject);
 
     if (!unlocked) return { bg: "#f0f0f0", btn: "#aaa", text: "#888" };
@@ -74,6 +136,8 @@ export default function App() {
 
     if (subject.status === "aprobada")
       return { bg: "#88eba2", btn: "#15c243", text: "#0f5e2a" };
+
+    return { bg: "#ddd", btn: "#999", text: "#333" };
   };
 
   const formatStatus = (subject) => {
@@ -92,7 +156,7 @@ export default function App() {
   // ========================
   const approved = subjects.filter(s => s.status === "aprobada").length;
   const total = subjects.length;
-  const progress = Math.round((approved / total) * 100);
+  const progress = total > 0 ? Math.round((approved / total) * 100) : 0;
 
   const radius = 40;
   const stroke = 8;
@@ -100,7 +164,7 @@ export default function App() {
   const offset = normalized - (progress / 100) * normalized;
 
   // ========================
-  // COMPONENTE
+  // CARD
   // ========================
   const SubjectCard = ({ s }) => {
     const styles = getStyles(s);
@@ -113,11 +177,10 @@ export default function App() {
         borderRadius: "12px",
         overflow: "hidden",
         boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-        width: "100%",
-        backgroundColor: "white",
+        backgroundColor: "white"
       }}>
 
-        {/* CABECERA */}
+        {/* HEADER */}
         <div
           onClick={() => toggleOpen(s.id)}
           style={{
@@ -131,9 +194,9 @@ export default function App() {
           }}
         >
 
-          <div style={{ display: "flex", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+
             <span style={{
-              marginRight: "10px",
               transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
               transition: "0.2s"
             }}>
@@ -141,9 +204,11 @@ export default function App() {
             </span>
 
             <strong>{s.name}</strong>
-            <span style={{ marginLeft: "8px", fontSize: "12px" }}>
+
+            <span style={{ fontSize: "12px", opacity: 0.7 }}>
               {s.hours || 6} hs
             </span>
+
           </div>
 
           <button
@@ -157,103 +222,91 @@ export default function App() {
               border: "none",
               padding: "6px 12px",
               borderRadius: "20px",
-              fontSize: "12px",
-              cursor: "pointer"
+              fontSize: "12px"
             }}
           >
             {formatStatus(s)}
           </button>
+
         </div>
 
-        {/* 👇 CLAVE: SIEMPRE RENDERIZA (NO CAMBIA ALTURA) */}
+        {/* BODY */}
         <div style={{
           backgroundColor: "#f7f7f7",
           padding: "16px",
-          borderTop: "1px solid rgba(0,0,0,0.08)",
-          opacity: isOpen ? 1 : 0,
-          height: isOpen ? "auto" : "0px",
-          overflow: "hidden",
-          transition: "all 0.3s ease"
+          display: isOpen ? "block" : "none",
+          textAlign: "left"
         }}>
 
-          <p><b>Carga horaria:</b> {s.hours || 6} horas semanales</p>
+          <p style={{ margin: "6px 0" }}>
+            Carga horaria: {s.hours || 6} horas cátedra semanales
+          </p>
 
-          <p><b>Materias que desbloquea</b></p>
+          <p style={{ margin: "6px 0" }}>
+            Requisitos para cursar y rendir: Ninguno
+          </p>
+
+          <p style={{ margin: "10px 0 6px 0" }}>
+            Materias que desbloquea:
+          </p>
 
           <div style={{ marginLeft: "10px" }}>
-            {unlocks.map(u => (
-              <div key={u.id} style={{
-                display: "flex",
-                alignItems: "center",
-                marginBottom: "6px"
-              }}>
-                <span style={{ marginRight: "6px" }}>✔</span>
+            {unlocks.length === 0 && (
+              <p style={{ opacity: 0.6 }}>Ninguna</p>
+            )}
 
-                <span>
-                  <b style={{ color: "#1a5cff" }}>{u.name}</b> ({u.year}° año)
-                </span>
+            {unlocks.map((u, i) => (
+              <div key={u.id}>
+                • {u.name} ({u.year}° año)
               </div>
             ))}
           </div>
 
           <p style={{ marginTop: "10px", fontSize: "13px" }}>
-            Total: {unlocks.length}
+            Cantidad total: {unlocks.length}
           </p>
+
         </div>
+
       </div>
     );
   };
 
+  // ========================
+  // UI
+  // ========================
   return (
-    <div style={{
-      padding: "20px",
-      maxWidth: "800px",
-      margin: "auto",
-      fontFamily: "sans-serif"
-    }}>
+    <div style={{ padding: "20px", maxWidth: "800px", margin: "auto" }}>
 
       <h1>Currix</h1>
 
-      {/* 🔥 PROGRESO CIRCULAR */}
-      <div style={{
-        display: "flex",
-        justifyContent: "center",
-        marginBottom: "30px"
-      }}>
+      {/* PROGRESO */}
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: "20px" }}>
         <svg width="100" height="100">
-          <circle
-            stroke="#eee"
-            fill="transparent"
-            strokeWidth={stroke}
-            r={radius}
-            cx="50"
-            cy="50"
-          />
+          <circle stroke="#eee" fill="transparent" strokeWidth={8} r={40} cx="50" cy="50" />
           <circle
             stroke="#15c243"
             fill="transparent"
-            strokeWidth={stroke}
-            r={radius}
+            strokeWidth={8}
+            r={40}
             cx="50"
             cy="50"
             strokeDasharray={normalized}
             strokeDashoffset={offset}
             strokeLinecap="round"
-            style={{ transition: "0.5s" }}
           />
-          <text
-            x="50%"
-            y="50%"
-            dominantBaseline="middle"
-            textAnchor="middle"
-            fontSize="16"
-          >
+          <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle">
             {progress}%
           </text>
         </svg>
       </div>
 
-      {[1,2,3,4,5].map(year => (
+      {/* LISTA */}
+      {subjects.length === 0 && (
+        <p>Cargando materias...</p>
+      )}
+
+      {[1, 2, 3, 4, 5].map(year => (
         <div key={year}>
           <h2>{year}° Año</h2>
 
@@ -262,6 +315,7 @@ export default function App() {
             .map(s => <SubjectCard key={s.id} s={s} />)}
         </div>
       ))}
+
     </div>
   );
 }
