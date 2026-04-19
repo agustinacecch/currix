@@ -10,6 +10,7 @@ const subjectSchema = new mongoose.Schema({
 });
 
 const userSchema = new mongoose.Schema({
+  username: { type: String, required: true, default: "Estudiante" },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   subjects: [subjectSchema]

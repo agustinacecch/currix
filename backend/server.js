@@ -26,11 +26,15 @@ app.use("/career", careerRoutes); // 👈 ESTA LÍNEA TE FALTABA
 app.get("/me", authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(401).json({ message: "Usuario no encontrado" });
+    }
     res.json(user);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
 
 // 🔥 debug env
 console.log("MONGO_URL:", process.env.MONGO_URL);
