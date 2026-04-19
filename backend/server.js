@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import dotenv from "dotenv";
 
 import authRoutes from "./routes/auth.js";
+import careerRoutes from "./routes/career.js"; // 👈 IMPORTANTE
 import User from "./models/User.js";
 import authMiddleware from "./middleware/auth.js";
 
@@ -13,14 +14,15 @@ dotenv.config();
 const app = express();
 const PORT = 3000;
 
-// middleware global
+// 🔹 middleware global
 app.use(cors());
 app.use(express.json());
 
-// rutas auth
+// 🔹 rutas
 app.use("/auth", authRoutes);
+app.use("/career", careerRoutes); // 👈 ESTA LÍNEA TE FALTABA
 
-// perfil usuario logueado
+// 🔹 perfil usuario logueado
 app.get("/me", authMiddleware, async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
@@ -30,11 +32,12 @@ app.get("/me", authMiddleware, async (req, res) => {
   }
 });
 
-// 🔥 debug (para ver si .env está bien)
+// 🔥 debug env
 console.log("MONGO_URL:", process.env.MONGO_URL);
 
-// 🔥 conexión a Mongo (UNA SOLA VEZ)
-mongoose.connect(process.env.MONGO_URL)
+// 🔥 conexión a Mongo
+mongoose
+  .connect(process.env.MONGO_URL)
   .then(() => {
     console.log("🟢 MongoDB conectado");
   })
@@ -42,7 +45,7 @@ mongoose.connect(process.env.MONGO_URL)
     console.log("🔴 Mongo error:", err.message);
   });
 
-// servidor
+// 🔹 servidor
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);
 });

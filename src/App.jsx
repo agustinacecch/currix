@@ -1,53 +1,80 @@
 import { useState, useEffect } from "react";
-import { career } from "./data/career";
 
 export default function App() {
 
   const [subjects, setSubjects] = useState([]);
   const [openId, setOpenId] = useState(null);
 
+  // 🔧 adaptar estructura backend → frontend
+  const adaptCareer = (careerFromDB) => {
+    return careerFromDB.subjects.map(s => ({
+      id: s.id,
+      name: s.name,
+      year: s.year,
+      correlatives: s.correlatives || [],
+      hours: s.hours,
+      status: "no_cursada"
+    }));
+  };
+
   // ========================
   // LOAD USER + SUBJECTS
   // ========================
   useEffect(() => {
-    const fetchUser = async () => {
+    const fetchAll = async () => {
       try {
+        // 🔥 1. traer career desde backend
+        const resCareer = await fetch("http://localhost:3000/career/desarrollo-software");
+
+        if (!resCareer.ok) throw new Error("career backend failed");
+
+        const careerData = await resCareer.json();
+        console.log("📥 Career DB:", careerData);
+
+        let baseSubjects = adaptCareer(careerData);
+
+        // 🔥 2. traer usuario (si existe)
         const token = localStorage.getItem("token");
 
         if (!token) {
-          setSubjects(career.flat());
+          setSubjects(baseSubjects);
           return;
         }
 
-        const res = await fetch("http://localhost:3000/me", {
+        const resUser = await fetch("http://localhost:3000/me", {
           headers: {
             Authorization: `Bearer ${token}`
           }
         });
 
-        const data = await res.json();
+        const userData = await resUser.json();
+console.log("👤 USER:", userData);
 
-        console.log("USER:", data);
+// 🛡️ SI NO HAY USER → seguir sin romper
+if (!userData) {
+  setSubjects(baseSubjects);
+  return;
+}
 
-        // merge career + progreso
-        const merged = career.flat().map(c => {
-          const saved = data.subjects?.find(s => s.id === c.id);
+// 🔥 merge progreso
+const merged = baseSubjects.map(c => {
+  const saved = userData.subjects?.find(s => s.id === c.id);
 
-          return {
-            ...c,
-            status: saved?.status || "no_cursada"
-          };
-        });
+  return {
+    ...c,
+    status: saved?.status || "no_cursada"
+  };
+});
 
-        setSubjects(merged);
+setSubjects(merged);
 
       } catch (error) {
-        console.log("ERROR:", error);
-        setSubjects(career.flat());
+        console.error("❌ Error cargando career:", error);
+        setSubjects([]);
       }
     };
 
-    fetchUser();
+    fetchAll();
   }, []);
 
   // ========================
@@ -180,7 +207,6 @@ export default function App() {
         backgroundColor: "white"
       }}>
 
-        {/* HEADER */}
         <div
           onClick={() => toggleOpen(s.id)}
           style={{
@@ -230,7 +256,6 @@ export default function App() {
 
         </div>
 
-        {/* BODY */}
         <div style={{
           backgroundColor: "#f7f7f7",
           padding: "16px",
@@ -255,7 +280,7 @@ export default function App() {
               <p style={{ opacity: 0.6 }}>Ninguna</p>
             )}
 
-            {unlocks.map((u, i) => (
+            {unlocks.map((u) => (
               <div key={u.id}>
                 • {u.name} ({u.year}° año)
               </div>
@@ -280,7 +305,6 @@ export default function App() {
 
       <h1>Currix</h1>
 
-      {/* PROGRESO */}
       <div style={{ display: "flex", justifyContent: "center", marginBottom: "20px" }}>
         <svg width="100" height="100">
           <circle stroke="#eee" fill="transparent" strokeWidth={8} r={40} cx="50" cy="50" />
@@ -301,7 +325,6 @@ export default function App() {
         </svg>
       </div>
 
-      {/* LISTA */}
       {subjects.length === 0 && (
         <p>Cargando materias...</p>
       )}
