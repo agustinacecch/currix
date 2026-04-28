@@ -2,18 +2,22 @@ import mongoose from "mongoose";
 
 const subjectSchema = new mongoose.Schema({
   id: Number,
-  name: String,
   status: {
     type: String,
     default: "no_cursada"
   }
 });
 
+const careerProgressSchema = new mongoose.Schema({
+  slug: { type: String, required: true },
+  subjects: [subjectSchema]
+});
+
 const userSchema = new mongoose.Schema({
-  username: { type: String, required: true, default: "Estudiante" },
+  username: { type: String, default: "Estudiante" },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  subjects: [subjectSchema]
+  careers: [careerProgressSchema]   // multi-career progress, one entry per career
 });
 
 export default mongoose.model("User", userSchema);

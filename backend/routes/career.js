@@ -3,7 +3,17 @@ import Career from "../models/Career.js";
 
 const router = express.Router();
 
-// GET /career/:slug
+// 🔥 PRIMERO la ruta raíz
+router.get("/", async (req, res) => {
+  try {
+    const careers = await Career.find({}, "slug name university faculty");
+    res.json(careers);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// 🔥 DESPUÉS la dinámica
 router.get("/:slug", async (req, res) => {
   try {
     const { slug } = req.params;
