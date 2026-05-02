@@ -15,7 +15,7 @@ router.get("/", (req, res) => {
 // REGISTER
 router.post("/register", async (req, res) => {
   try {
-    const { email, password, username } = req.body;
+    const { email, password, username, guestCareers } = req.body;
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
@@ -28,7 +28,7 @@ router.post("/register", async (req, res) => {
       username: username || "Estudiante",
       email,
       password: hashedPassword,
-      careers: []
+      careers: guestCareers || []
     });
 
     await newUser.save();

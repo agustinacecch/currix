@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function Login({ onLogin }) {
+export default function Login({ onLogin, onCancel }) {
   const [isRegistering, setIsRegistering] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -16,7 +16,22 @@ export default function Login({ onLogin }) {
 
     const endpoint = isRegistering ? "/auth/register" : "/auth/login";
     const bodyArgs = { email, password };
-    if (isRegistering) bodyArgs.username = username;
+    if (isRegistering) {
+      bodyArgs.username = username;
+      // Gather guest progress
+      const guestCareers = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("guestProgress_")) {
+          const slug = key.replace("guestProgress_", "");
+          try {
+            const subjects = JSON.parse(localStorage.getItem(key));
+            guestCareers.push({ slug, subjects });
+          } catch(e){}
+        }
+      }
+      bodyArgs.guestCareers = guestCareers;
+    }
 
     try {
       const res = await fetch(`http://localhost:3000${endpoint}`, {
@@ -88,6 +103,14 @@ export default function Login({ onLogin }) {
         >
           Registrarse
         </button>
+        {onCancel && (
+          <button 
+            onClick={onCancel}
+            style={{ padding: "16px", background: "transparent", border: "none", cursor: "pointer", color: "#64748b", fontWeight: "bold" }}
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "16px" }}>

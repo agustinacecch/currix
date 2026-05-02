@@ -11,6 +11,9 @@ import KeySubjects from "./components/KeySubjects";
 import UnlockableSoon from "./components/UnlockableSoon";
 import Footer from "./components/Footer";
 import CareerPicker from "./components/CareerPicker";
+import KanbanBoard from "./components/KanbanBoard";
+import KnowledgeGraph from "./components/KnowledgeGraph";
+import SmartPath from "./components/SmartPath";
 import { isUnlocked } from "./utils";
 
 const PHRASES = [
@@ -31,6 +34,14 @@ export default function App() {
   const [user, setUser] = useState(null);        // null = not loaded yet
   const [authLoaded, setAuthLoaded] = useState(false); // true once the token check is done
   const [selectedSlug, setSelectedSlug] = useState(null);
+  const [showLogin, setShowLogin] = useState(false);
+  
+  // Simulator state
+  const [isSimulator, setIsSimulator] = useState(false);
+  const [originalSubjects, setOriginalSubjects] = useState([]);
+
+  // View state
+  const [viewMode, setViewMode] = useState("classic");
 
   const randomPhrase = useMemo(() => PHRASES[Math.floor(Math.random() * PHRASES.length)], []);
 
@@ -131,7 +142,14 @@ export default function App() {
     setSelectedSlug(slug);
     window.history.pushState({ screen: "dashboard", slug }, "", "/");
     const careerProgress = (userData || user)?.careers?.find(c => c.slug === slug);
-    await loadCareer(slug, careerProgress?.subjects || []);
+    
+    let savedSubjects = careerProgress?.subjects || [];
+    if (!userData && !user) {
+      const guestData = localStorage.getItem(`guestProgress_${slug}`);
+      if (guestData) savedSubjects = JSON.parse(guestData);
+    }
+    
+    await loadCareer(slug, savedSubjects);
   };
 
   // ── Logout ───────────────────────────────────────────────────────────────
@@ -155,22 +173,25 @@ export default function App() {
     return deps;
   };
 
-  const handleChangeStatus = async (id) => {
+  const handleChangeStatus = async (id, forceStatus) => {
     let updated = [...subjects];
     const idx = updated.findIndex(s => s.id === id);
     if (idx === -1) return;
 
     const subject = updated[idx];
-    if (!isUnlocked(subject, updated)) return;
-
-    let newStatus = subject.status;
+    
+    let newStatus = forceStatus || subject.status;
     let becameUnapproved = false;
 
-    if (subject.status === "no_cursada") newStatus = "cursando";
-    else if (subject.status === "cursando") newStatus = "regular";
-    else if (subject.status === "regular") newStatus = "aprobada";
-    else {
-      newStatus = "no_cursada";
+    if (!forceStatus) {
+      if (!isUnlocked(subject, updated)) return;
+      if (subject.status === "no_cursada") newStatus = "cursando";
+      else if (subject.status === "cursando") newStatus = "regular";
+      else if (subject.status === "regular") newStatus = "aprobada";
+      else newStatus = "no_cursada";
+    }
+
+    if (newStatus === "no_cursada" && subject.status !== "no_cursada") {
       becameUnapproved = true;
     }
 
@@ -185,9 +206,15 @@ export default function App() {
 
     setSubjects(updated);
 
+    if (isSimulator) return; // 🛑 No guardamos nada si estamos en modo simulador
+
     try {
       const token = localStorage.getItem("token");
-      if (!token) return;
+      if (!token) {
+        const cleanSubjects = updated.map(s => ({ id: s.id, status: s.status }));
+        localStorage.setItem(`guestProgress_${selectedSlug}`, JSON.stringify(cleanSubjects));
+        return;
+      }
 
       await fetch("http://localhost:3000/auth/subjects", {
         method: "POST",
@@ -231,7 +258,7 @@ export default function App() {
   }
 
   // 2. Not logged in → full-page Login
-  if (!user) {
+  if (showLogin) {
     return (
       <div style={{ minHeight: "100vh", backgroundColor: "#F5F3FF", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px" }}>
         <div style={{ marginBottom: "32px", textAlign: "center" }}>
@@ -250,26 +277,34 @@ export default function App() {
             Tu planner universitario interactivo 🎓
           </p>
         </div>
-        <Login onLogin={() => {
-          const token = localStorage.getItem("token");
-          fetch("http://localhost:3000/me", { headers: { Authorization: `Bearer ${token}` } })
-            .then(r => r.json())
-            .then(userData => {
-              setUser(userData);
-              window.history.pushState({ screen: "picker" }, "", "/");
-            });
+        <Login 
+          onCancel={() => setShowLogin(false)}
+          onLogin={() => {
+            const token = localStorage.getItem("token");
+            fetch("http://localhost:3000/me", { headers: { Authorization: `Bearer ${token}` } })
+              .then(r => r.json())
+              .then(userData => {
+                setUser(userData);
+                setShowLogin(false);
+                window.history.pushState({ screen: "picker" }, "", "/");
+                // Clear guest data to avoid conflicts later
+                Object.keys(localStorage).forEach(k => {
+                  if (k.startsWith("guestProgress_")) localStorage.removeItem(k);
+                });
+              });
         }} />
       </div>
     );
   }
 
-  // 3. Logged in, no career selected → CareerPicker
+  // 3. No career selected → CareerPicker
   if (!selectedSlug) {
     return (
       <CareerPicker
-        user={{ ...user, displayName }}
+        user={user ? { ...user, displayName } : null}
         onCareerSelected={(slug) => handleCareerSelected(slug, user)}
         onLogout={handleLogout}
+        onLoginClick={() => setShowLogin(true)}
       />
     );
   }
@@ -311,20 +346,45 @@ export default function App() {
             <h2 style={{ fontSize: "20px", margin: "0 0 4px 0", color: "#0F172A" }}>
               ¡Hola, <span style={{ color: "#7C3AED" }}>{displayName}</span>! ✨
             </h2>
-            <p style={{ margin: "0 0 8px 0", fontSize: "14px", color: "#64748B" }}>{randomPhrase}</p>
+            <p style={{ margin: "0 0 8px 0", fontSize: "14px", color: "#64748B" }}>
+              {isSimulator ? <span style={{color:"#D97706", fontWeight:"bold"}}>Modo Simulador Activo</span> : randomPhrase}
+            </p>
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button
+                onClick={() => {
+                  if (!isSimulator) {
+                    setOriginalSubjects([...subjects]);
+                    setIsSimulator(true);
+                  } else {
+                    setSubjects(originalSubjects);
+                    setIsSimulator(false);
+                  }
+                }}
+                style={{ fontSize: "12px", color: isSimulator ? "#FFFFFF" : "#D97706", background: isSimulator ? "#F59E0B" : "none", border: "1px solid #FCD34D", borderRadius: "20px", padding: "4px 14px", cursor: "pointer", fontWeight: "500", backgroundColor: isSimulator ? "#F59E0B" : "#FFFBEB" }}
+              >
+                {isSimulator ? "🛑 Salir del Simulador" : "⏱️ Modo Simulador"}
+              </button>
               <button
                 onClick={goToPicker}
                 style={{ fontSize: "12px", color: "#7C3AED", background: "none", border: "1px solid #DDD6FE", borderRadius: "20px", padding: "4px 14px", cursor: "pointer", fontWeight: "500", backgroundColor: "#FAF5FF" }}
               >
                 ↩ Cambiar carrera
               </button>
-              <button
-                onClick={handleLogout}
-                style={{ fontSize: "12px", color: "#DC2626", background: "none", border: "1px solid #FECACA", borderRadius: "20px", padding: "4px 14px", cursor: "pointer", fontWeight: "500", backgroundColor: "#FFF1F2" }}
-              >
-                🚪 Cerrar sesión
-              </button>
+              {!user ? (
+                <button
+                  onClick={() => setShowLogin(true)}
+                  style={{ fontSize: "12px", color: "#2563EB", background: "none", border: "1px solid #BFDBFE", borderRadius: "20px", padding: "4px 14px", cursor: "pointer", fontWeight: "500", backgroundColor: "#EFF6FF" }}
+                >
+                  🚀 Iniciar sesión / Registrarse
+                </button>
+              ) : (
+                <button
+                  onClick={handleLogout}
+                  style={{ fontSize: "12px", color: "#DC2626", background: "none", border: "1px solid #FECACA", borderRadius: "20px", padding: "4px 14px", cursor: "pointer", fontWeight: "500", backgroundColor: "#FFF1F2" }}
+                >
+                  🚪 Cerrar sesión
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -338,9 +398,18 @@ export default function App() {
         {subjects.length > 0 && (
           <div className="layout-grid">
             {/* Main Column */}
-            <div>
-              <h2 style={{ fontSize: "28px", marginBottom: "24px", color: "#0F172A", fontWeight: "700" }}>Tu Plan de Estudios 🎓</h2>
-              {(() => {
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", flexWrap: "wrap", gap: "16px" }}>
+                <h2 style={{ fontSize: "28px", margin: 0, color: "#0F172A", fontWeight: "700" }}>Tu Plan de Estudios 🎓</h2>
+                <div style={{ display: "flex", gap: "4px", background: "#f1f5f9", padding: "4px", borderRadius: "8px", flexWrap: "wrap" }}>
+                  <button onClick={() => setViewMode("classic")} style={{ padding: "6px 12px", border: "none", borderRadius: "6px", cursor: "pointer", background: viewMode === "classic" ? "white" : "transparent", boxShadow: viewMode === "classic" ? "0 1px 3px rgba(0,0,0,0.1)" : "none", fontWeight: viewMode === "classic" ? "600" : "400", color: viewMode === "classic" ? "#0f172a" : "#64748b" }}>Lista Clásica</button>
+                  <button onClick={() => setViewMode("kanban")} style={{ padding: "6px 12px", border: "none", borderRadius: "6px", cursor: "pointer", background: viewMode === "kanban" ? "white" : "transparent", boxShadow: viewMode === "kanban" ? "0 1px 3px rgba(0,0,0,0.1)" : "none", fontWeight: viewMode === "kanban" ? "600" : "400", color: viewMode === "kanban" ? "#0f172a" : "#64748b" }}>Vista Kanban</button>
+                  <button onClick={() => setViewMode("graph")} style={{ padding: "6px 12px", border: "none", borderRadius: "6px", cursor: "pointer", background: viewMode === "graph" ? "white" : "transparent", boxShadow: viewMode === "graph" ? "0 1px 3px rgba(0,0,0,0.1)" : "none", fontWeight: viewMode === "graph" ? "600" : "400", color: viewMode === "graph" ? "#0f172a" : "#64748b" }}>Grafo Interactivo</button>
+                  <button onClick={() => setViewMode("smart")} style={{ padding: "6px 12px", border: "none", borderRadius: "6px", cursor: "pointer", background: viewMode === "smart" ? "linear-gradient(135deg, #7C3AED, #2563EB)" : "transparent", boxShadow: viewMode === "smart" ? "0 1px 3px rgba(0,0,0,0.2)" : "none", fontWeight: viewMode === "smart" ? "600" : "400", color: viewMode === "smart" ? "white" : "#64748b" }}>Smart Path ✨</button>
+                </div>
+              </div>
+
+              {viewMode === "classic" && (() => {
                 const hasCycle = subjects.some(s => s.cycle);
                 const CYCLE_LABELS = { cbc: "CBC", biomedico: "Ciclo Biomédico", clinico: "Ciclo Clínico", internado: "Internado" };
                 const CYCLE_ORDER = ["cbc", "biomedico", "clinico", "internado"];
@@ -378,6 +447,22 @@ export default function App() {
                   );
                 });
               })()}
+
+              {viewMode === "kanban" && (
+                <KanbanBoard subjects={subjects} onStatusChange={(id, status) => handleChangeStatus(id, status)} />
+              )}
+
+              {viewMode === "graph" && (
+                <div style={{ marginTop: "24px" }}>
+                  <KnowledgeGraph subjects={subjects} />
+                </div>
+              )}
+
+              {viewMode === "smart" && (
+                <div style={{ marginTop: "24px" }}>
+                  <SmartPath subjects={subjects} careerSlug={selectedSlug} />
+                </div>
+              )}
 
               <div style={{ marginTop: "40px" }}>
                 <AvailableSubjects subjects={subjects} />
